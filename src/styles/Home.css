@@ -1,0 +1,93 @@
+/* General Page Styling */
+.home-container {
+    font-family: "Arial", sans-serif;
+    background: linear-gradient(135deg, #007bff, #00d4ff);
+    color: white;
+    min-height: 100vh;
+    text-align: center;
+    padding: 40px 20px;
+  }
+  
+  /* Hero Section */
+  .hero {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 50px 0;
+  }
+  
+  .hero-content {
+    max-width: 50%;
+    text-align: left;
+  }
+  
+  .hero-content h1 {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+  }
+  
+  .hero-content p {
+    font-size: 1.2rem;
+    margin-bottom: 20px;
+  }
+  
+  .btn {
+    background: white;
+    color: #007bff;
+    padding: 10px 20px;
+    border: none;
+    font-size: 1rem;
+    cursor: pointer;
+    border-radius: 5px;
+  }
+  
+  .btn:hover {
+    background: #f8f9fa;
+  }
+  
+  /* Hero Image */
+  .hero-image img {
+    width: 350px;
+  }
+  
+  /* Welcome Section */
+  .welcome {
+    margin-top: 50px;
+    padding: 30px;
+    background: white;
+    color: #333;
+    border-radius: 10px;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  .welcome h2 {
+    font-size: 2rem;
+    color: #007bff;
+  }
+  
+  .welcome p {
+    font-size: 1.1rem;
+    line-height: 1.5;
+  }
+/* Hero Section */
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+/* Hover Image */
+.hover-image img {
+  width: 300px;
+  height: auto;
+  transition: transform 0.3s ease-in-out;
+}
+
+.hover-image:hover img {
+  transform: scale(1.1); /* Slightly enlarge image */
+}
+  
