@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import "../styles/Home.css"; // Import CSS file
 import TrainTracker from "../components/TrainTracker";
 import Footer from "../components/Footer"; // Import Footer
+import { useAuth } from "../contexts/AuthContext";
 import { 
   Container, 
   Typography, 
@@ -12,12 +13,39 @@ import {
   CardContent,
   CardActionArea, 
   Button,
-  Paper
+  Paper,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions
 } from '@mui/material';
 import { Train as TrainIcon, Schedule, LocalShipping, CardMembership } from '@mui/icons-material';
 
 const Home = () => {
   const [imageSrc, setImageSrc] = useState("/images/train-icon.jpg");
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false);
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
+  const handleBookNowClick = () => {
+    if (isAuthenticated) {
+      // User is logged in, redirect to booking
+      navigate("/booking");
+    } else {
+      // User is not logged in, show login dialog
+      setLoginDialogOpen(true);
+    }
+  };
+
+  const handleLoginRedirect = () => {
+    setLoginDialogOpen(false);
+    navigate("/login", { state: { from: "/booking" } });
+  };
+
+  const handleDialogClose = () => {
+    setLoginDialogOpen(false);
+  };
 
   return (
     <>
@@ -42,8 +70,7 @@ const Home = () => {
                 variant="contained" 
                 size="large" 
                 startIcon={<TrainIcon />}
-                component={Link}
-                to="/booking"
+                onClick={handleBookNowClick}
                 sx={{ mt: 2 }}
               >
                 Book Now
@@ -118,8 +145,7 @@ const Home = () => {
                   }}
                 >
                   <CardActionArea 
-                    component={Link} 
-                    to={service.link}
+                    onClick={() => !isAuthenticated && service.link === "/booking" ? handleBookNowClick() : navigate(service.link)}
                     sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
                   >
                     <CardContent sx={{ flexGrow: 1, width: '100%' }}>
@@ -140,6 +166,31 @@ const Home = () => {
           </Grid>
         </Box>
       </Container>
+      
+      {/* Login Dialog */}
+      <Dialog
+        open={loginDialogOpen}
+        onClose={handleDialogClose}
+        aria-labelledby="login-dialog-title"
+        aria-describedby="login-dialog-description"
+      >
+        <DialogTitle id="login-dialog-title">
+          {"Login Required"}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="login-dialog-description">
+            You need to be logged in to book tickets. Would you like to login now?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDialogClose} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleLoginRedirect} color="primary" autoFocus>
+            Login
+          </Button>
+        </DialogActions>
+      </Dialog>
       
       {/* Add Footer component */}
       <Footer />
