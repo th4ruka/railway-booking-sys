@@ -30,8 +30,8 @@ const Home = () => {
 
   const handleBookNowClick = () => {
     if (isAuthenticated) {
-      // User is logged in, redirect to booking
-      navigate("/booking");
+      // User is logged in, redirect to dashboard/tickets instead of booking
+      navigate("/dashboard/tickets");
     } else {
       // User is not logged in, show login dialog
       setLoginDialogOpen(true);

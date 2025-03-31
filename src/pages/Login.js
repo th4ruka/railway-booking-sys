@@ -36,8 +36,8 @@ const Login = () => {
       // Sign in with Firebase
       await signInWithEmailAndPassword(auth, email, password);
       
-      // Redirect user to the original destination or home
-      navigate(from);
+      // Redirect user to the dashboard instead of home
+      navigate('/dashboard');
     } catch (err) {
       console.error("Login error:", err);
       setError("Failed to log in. Please check your credentials.");
