@@ -1,31 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import {
   Box,
   Typography,
   Paper,
   Tabs,
   Tab,
-  TextField,
   Button,
   Grid,
   Card,
   CardContent,
   CardActions,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogContentText,
   DialogActions,
   Divider,
-  Chip
+  Chip,
+  CircularProgress,
+  Alert
 } from '@mui/material';
-import { Search, Train, Cancel, EventSeat } from '@mui/icons-material';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
+import { Train, Cancel, EventSeat } from '@mui/icons-material';
+import { format } from 'date-fns';
+import { getAllAvailableTrains, getUserTickets, bookTicket, cancelTicket } from '../../firebase/ticketService';
+import { auth } from '../../firebase/config';
 
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
@@ -49,30 +47,159 @@ function TabPanel(props) {
 
 export default function TicketManagement() {
   const [tabValue, setTabValue] = useState(0);
-  const [date, setDate] = useState(new Date());
+  const [availableTrains, setAvailableTrains] = useState([]);
+  const [loadingTrains, setLoadingTrains] = useState(false);
+  const [trainsError, setTrainsError] = useState('');
+
+  const [myTickets, setMyTickets] = useState([]);
+  const [loadingMyTickets, setLoadingMyTickets] = useState(false);
+  const [myTicketsError, setMyTicketsError] = useState('');
+
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
-  
-  // Mock data for demonstration
-  const myTickets = [
-    { id: 1, train: 'Udarata Manike', from: 'Colombo', to: 'Kandy', date: '2023-09-15', time: '08:00 AM', seat: 'A12', status: 'Confirmed' },
-    { id: 2, train: 'Ruhunu Kumari', from: 'Colombo', to: 'Matara', date: '2023-10-20', time: '10:00 AM', seat: 'B08', status: 'Confirmed' },
-  ];
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingFeedback, setBookingFeedback] = useState({ type: '', message: '' });
+
+  const currentUser = auth.currentUser;
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
+    if (newValue === 0 && currentUser) {
+      fetchAllAvailableTrains();
+    } else if (newValue === 1 && currentUser) {
+      fetchMyTickets();
+    }
   };
 
-  const handleCancelTicket = (ticket) => {
+  const fetchAllAvailableTrains = async () => {
+    setLoadingTrains(true);
+    setTrainsError('');
+    setAvailableTrains([]);
+    setBookingFeedback({ type: '', message: '' });
+
+    try {
+      const results = await getAllAvailableTrains();
+      setAvailableTrains(results);
+      if (results.length === 0) {
+        setTrainsError("No trains currently available for booking.");
+      }
+    } catch (error) {
+      console.error("Error in fetchAllAvailableTrains: ", error);
+      setTrainsError(error.message || "Failed to fetch available trains.");
+    } finally {
+      setLoadingTrains(false);
+    }
+  };
+
+  const fetchMyTickets = async () => {
+    if (!currentUser) {
+      setMyTicketsError("Please log in to see your tickets.");
+      return;
+    }
+    setLoadingMyTickets(true);
+    setMyTicketsError('');
+    setMyTickets([]);
+
+    try {
+      const tickets = await getUserTickets(currentUser.uid);
+      setMyTickets(tickets);
+      if (tickets.length === 0) {
+        setMyTicketsError("You haven't booked any tickets yet.");
+      }
+    } catch (error) {
+      console.error("Error in fetchMyTickets: ", error);
+      setMyTicketsError(error.message || "Failed to load your tickets. Please try again.");
+    } finally {
+      setLoadingMyTickets(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tabValue === 0 && currentUser) {
+      fetchAllAvailableTrains();
+    } else if (tabValue === 1 && currentUser) {
+      fetchMyTickets();
+    }
+  }, [currentUser, tabValue]);
+
+  const handleBookTicket = async (train) => {
+    if (!currentUser) {
+      setBookingFeedback({ type: 'error', message: 'You must be logged in to book tickets.' });
+      return;
+    }
+    if (!train) return;
+
+    setBookingLoading(true);
+    setBookingFeedback({ type: '', message: '' });
+
+    try {
+      await bookTicket(train, currentUser);
+      setBookingFeedback({ type: 'success', message: `Successfully booked ticket for ${train.name || 'this train'}!` });
+      if (tabValue === 1) {
+        fetchMyTickets();
+      }
+    } catch (error) {
+      console.error("Error in handleBookTicket: ", error);
+      setBookingFeedback({ type: 'error', message: error.message || 'Failed to book ticket. Please try again.' });
+    } finally {
+      setBookingLoading(false);
+    }
+  };
+
+  const handleCancelTicketClick = (ticket) => {
     setSelectedTicket(ticket);
     setCancelDialogOpen(true);
   };
 
-  const confirmCancelTicket = () => {
-    // Here you would implement the actual cancellation logic
-    console.log(`Cancelling ticket: ${selectedTicket.id}`);
-    setCancelDialogOpen(false);
-    // In a real app, you would update the database and refresh the list
+  const confirmCancelTicket = async () => {
+    if (!selectedTicket) return;
+    setBookingLoading(true);
+    setBookingFeedback({ type: '', message: '' });
+
+    try {
+      await cancelTicket(selectedTicket.id);
+      setBookingFeedback({ type: 'success', message: 'Ticket cancelled successfully.' });
+      fetchMyTickets();
+    } catch (error) {
+      console.error("Error in confirmCancelTicket: ", error);
+      setBookingFeedback({ type: 'error', message: error.message || 'Failed to cancel ticket. Please try again.' });
+    } finally {
+      setCancelDialogOpen(false);
+      setSelectedTicket(null);
+      setBookingLoading(false);
+    }
+  };
+
+  const renderDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    try {
+      if (timestamp instanceof Date) {
+        return format(timestamp, 'yyyy-MM-dd');
+      }
+      return format(timestamp.toDate(), 'yyyy-MM-dd');
+    } catch (e) {
+      console.error("Error formatting date:", e, timestamp);
+      return 'Invalid Date';
+    }
+  };
+
+  const renderTime = (timestampOrString) => {
+    if (!timestampOrString) return 'N/A';
+    if (typeof timestampOrString === 'string') {
+      if (/^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)?$/i.test(timestampOrString)) {
+        return timestampOrString;
+      }
+      return 'N/A';
+    }
+    try {
+      if (timestampOrString instanceof Date) {
+        return format(timestampOrString, 'hh:mm a');
+      }
+      return format(timestampOrString.toDate(), 'hh:mm a');
+    } catch (e) {
+      console.error("Error formatting time:", e, timestampOrString);
+      return 'Invalid Time';
+    }
   };
 
   return (
@@ -80,6 +207,12 @@ export default function TicketManagement() {
       <Typography variant="h4" gutterBottom>
         Ticket Management
       </Typography>
+      
+      {bookingFeedback.message && (
+        <Alert severity={bookingFeedback.type} sx={{ mb: 2 }}>
+          {bookingFeedback.message}
+        </Alert>
+      )}
       
       <Paper sx={{ width: '100%', mb: 2 }}>
         <Tabs
@@ -94,128 +227,77 @@ export default function TicketManagement() {
         </Tabs>
         
         <TabPanel value={tabValue} index={0}>
-          <Grid container spacing={3}>
-            <Grid item xs={12}>
-              <Paper elevation={3} sx={{ p: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  Search for Trains
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <TextField
-                      fullWidth
-                      label="From"
-                      variant="outlined"
-                      placeholder="Departure Station"
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <TextField
-                      fullWidth
-                      label="To"
-                      variant="outlined"
-                      placeholder="Arrival Station"
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <LocalizationProvider dateAdapter={AdapterDateFns}>
-                      <DatePicker
-                        label="Travel Date"
-                        value={date}
-                        onChange={(newDate) => setDate(newDate)}
-                        renderInput={(params) => <TextField {...params} fullWidth />}
-                      />
-                    </LocalizationProvider>
-                  </Grid>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <FormControl fullWidth>
-                      <InputLabel>Class</InputLabel>
-                      <Select
-                        label="Class"
-                        defaultValue=""
-                      >
-                        <MenuItem value="economy">Economy</MenuItem>
-                        <MenuItem value="business">Business</MenuItem>
-                        <MenuItem value="first">First Class</MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={12}>
-                    <Button 
-                      variant="contained" 
-                      startIcon={<Search />}
-                      size="large"
-                      fullWidth
-                    >
-                      Search Trains
-                    </Button>
-                  </Grid>
-                </Grid>
-              </Paper>
-            </Grid>
-            
-            {/* Search results would appear here */}
-            <Grid item xs={12}>
-              <Typography variant="h6" gutterBottom>
-                Available Trains
-              </Typography>
-              <Grid container spacing={2}>
-                {[1, 2, 3].map((train) => (
-                  <Grid item xs={12} key={train}>
-                    <Card>
-                      <CardContent>
-                        <Grid container spacing={2} alignItems="center">
-                          <Grid item xs={12} md={1}>
-                            <Train fontSize="large" color="primary" />
-                          </Grid>
-                          <Grid item xs={12} md={3}>
-                            <Typography variant="h6">
-                              Udarata Manike
-                            </Typography>
-                            <Typography variant="body2" color="textSecondary">
-                              Train #1082
-                            </Typography>
-                          </Grid>
-                          <Grid item xs={12} md={2}>
-                            <Typography variant="body1">
-                              Colombo
-                            </Typography>
-                            <Typography variant="body2" color="textSecondary">
-                              08:00 AM
-                            </Typography>
-                          </Grid>
-                          <Grid item xs={12} md={2}>
-                            <Typography variant="body1">
-                              Kandy
-                            </Typography>
-                            <Typography variant="body2" color="textSecondary">
-                              12:00 PM
-                            </Typography>
-                          </Grid>
-                          <Grid item xs={12} md={2}>
-                            <Typography variant="body1">
-                              Duration: 4h
-                            </Typography>
-                            <Chip 
-                              label="42 seats available" 
-                              size="small" 
-                              color="success" 
-                              icon={<EventSeat />} 
-                            />
-                          </Grid>
-                          <Grid item xs={12} md={2}>
-                            <Button variant="contained" fullWidth>
-                              Book Now
-                            </Button>
-                          </Grid>
+          <Typography variant="h6" gutterBottom>
+            Available Trains for Booking
+          </Typography>
+          {loadingTrains && <CircularProgress sx={{ display: 'block', margin: '20px auto' }} />}
+          {trainsError && !loadingTrains && (
+            <Alert severity="warning" sx={{ mt: 2 }}>{trainsError}</Alert>
+          )}
+          {!loadingTrains && availableTrains.length > 0 && (
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              {availableTrains.map((train) => (
+                <Grid item xs={12} md={6} lg={4} key={train.id}>
+                  <Card>
+                    <CardContent>
+                      <Grid container spacing={1} alignItems="center">
+                        <Grid item xs={2} sm={1} sx={{ textAlign: 'center' }}>
+                          <Train fontSize="large" color="primary" />
                         </Grid>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                ))}
-              </Grid>
+                        <Grid item xs={10} sm={11}>
+                          <Typography variant="h6" noWrap>
+                            {train.name || 'Train Name Missing'}
+                          </Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            Train #{train.trainNumber || 'N/A'}
+                          </Typography>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Typography variant="body2" color="textSecondary">From</Typography>
+                          <Typography variant="body1">{train.departureStation}</Typography>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Typography variant="body2" color="textSecondary">To</Typography>
+                          <Typography variant="body1">{train.arrivalStation}</Typography>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Typography variant="body2" color="textSecondary">Date</Typography>
+                          <Typography variant="body1">{renderDate(train.departureDate)}</Typography>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Typography variant="body2" color="textSecondary">Time</Typography>
+                          <Typography variant="body1">{renderTime(train.departureTime)}</Typography>
+                        </Grid>
+                        <Grid item xs={12} sx={{ mt: 1 }}>
+                          <Chip
+                            label={`${train.totalSeats ?? '?'} seats`}
+                            size="small"
+                            color={(train.totalSeats ?? 0) > 0 ? "success" : "error"}
+                            icon={<EventSeat />}
+                          />
+                        </Grid>
+                      </Grid>
+                    </CardContent>
+                    <CardActions sx={{ justifyContent: 'flex-end' }}>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        onClick={() => handleBookTicket(train)}
+                        disabled={bookingLoading || (train.totalSeats ?? 0) <= 0}
+                      >
+                        {bookingLoading ? <CircularProgress size={20} /> : 'Book Now'}
+                      </Button>
+                    </CardActions>
+                  </Card>
+                </Grid>
+              ))}
             </Grid>
-          </Grid>
+          )}
+          {!loadingTrains && availableTrains.length === 0 && !trainsError && (
+            <Typography variant="body1" color="textSecondary" align="center" sx={{ mt: 2 }}>
+              No trains are currently scheduled or available for booking.
+            </Typography>
+          )}
         </TabPanel>
         
         <TabPanel value={tabValue} index={1}>
@@ -223,66 +305,51 @@ export default function TicketManagement() {
             Your Booked Tickets
           </Typography>
           
-          {myTickets.length > 0 ? (
+          {loadingMyTickets && <CircularProgress sx={{ display: 'block', margin: '20px auto' }} />}
+          {myTicketsError && !loadingMyTickets && (
+            <Alert severity={myTickets.length > 0 ? "info" : "warning"} sx={{ mt: 2 }}>{myTicketsError}</Alert>
+          )}
+
+          {!loadingMyTickets && myTickets.length > 0 ? (
             <Grid container spacing={2}>
               {myTickets.map((ticket) => (
                 <Grid item xs={12} md={6} key={ticket.id}>
                   <Card sx={{ mb: 2 }}>
                     <CardContent>
                       <Typography variant="h6" gutterBottom>
-                        {ticket.train}
+                        {ticket.trainName || 'Unknown Train'}
                       </Typography>
                       <Divider sx={{ mb: 2 }} />
-                      <Grid container spacing={2}>
+                      <Grid container spacing={1}>
                         <Grid item xs={6}>
-                          <Typography variant="body2" color="textSecondary">
-                            From
-                          </Typography>
-                          <Typography variant="body1">
-                            {ticket.from}
-                          </Typography>
+                          <Typography variant="body2" color="textSecondary">From</Typography>
+                          <Typography variant="body1">{ticket.from}</Typography>
                         </Grid>
                         <Grid item xs={6}>
-                          <Typography variant="body2" color="textSecondary">
-                            To
-                          </Typography>
-                          <Typography variant="body1">
-                            {ticket.to}
-                          </Typography>
+                          <Typography variant="body2" color="textSecondary">To</Typography>
+                          <Typography variant="body1">{ticket.to}</Typography>
                         </Grid>
                         <Grid item xs={6}>
-                          <Typography variant="body2" color="textSecondary">
-                            Date
-                          </Typography>
-                          <Typography variant="body1">
-                            {ticket.date}
-                          </Typography>
+                          <Typography variant="body2" color="textSecondary">Date</Typography>
+                          <Typography variant="body1">{renderDate(ticket.date)}</Typography>
                         </Grid>
                         <Grid item xs={6}>
-                          <Typography variant="body2" color="textSecondary">
-                            Time
-                          </Typography>
-                          <Typography variant="body1">
-                            {ticket.time}
-                          </Typography>
+                          <Typography variant="body2" color="textSecondary">Time</Typography>
+                          <Typography variant="body1">{renderTime(ticket.time)}</Typography>
                         </Grid>
                         <Grid item xs={6}>
-                          <Typography variant="body2" color="textSecondary">
-                            Seat
-                          </Typography>
-                          <Typography variant="body1">
-                            {ticket.seat}
-                          </Typography>
+                          <Typography variant="body2" color="textSecondary">Seat</Typography>
+                          <Typography variant="body1">{ticket.seat || 'Not Assigned'}</Typography>
                         </Grid>
                         <Grid item xs={6}>
-                          <Typography variant="body2" color="textSecondary">
-                            Status
+                          <Typography variant="body2" color="textSecondary">Status</Typography>
+                          <Chip label={ticket.status} color="primary" size="small" />
+                        </Grid>
+                        <Grid item xs={12} sx={{ mt: 1}}>
+                          <Typography variant="caption" color="textSecondary">
+                            Booking ID: {ticket.id} <br />
+                            Booked On: {renderDate(ticket.bookedAt)}
                           </Typography>
-                          <Chip 
-                            label={ticket.status} 
-                            color="primary" 
-                            size="small" 
-                          />
                         </Grid>
                       </Grid>
                     </CardContent>
@@ -290,7 +357,8 @@ export default function TicketManagement() {
                       <Button 
                         startIcon={<Cancel />} 
                         color="error" 
-                        onClick={() => handleCancelTicket(ticket)}
+                        onClick={() => handleCancelTicketClick(ticket)}
+                        disabled={bookingLoading}
                       >
                         Cancel Ticket
                       </Button>
@@ -300,28 +368,35 @@ export default function TicketManagement() {
               ))}
             </Grid>
           ) : (
+            !loadingMyTickets && !myTicketsError && (
             <Typography variant="body1" color="textSecondary" align="center">
-              You haven't booked any tickets yet.
+                You haven't booked any tickets yet, or check the login status.
             </Typography>
+            )
           )}
         </TabPanel>
       </Paper>
       
-      {/* Cancel Ticket Dialog */}
       <Dialog
         open={cancelDialogOpen}
-        onClose={() => setCancelDialogOpen(false)}
+        onClose={() => !bookingLoading && setCancelDialogOpen(false)}
+        aria-labelledby="cancel-dialog-title"
+        aria-describedby="cancel-dialog-description"
       >
-        <DialogTitle>Cancel Ticket</DialogTitle>
+        <DialogTitle id="cancel-dialog-title">Cancel Ticket Confirmation</DialogTitle>
         <DialogContent>
-          <DialogContentText>
-            Are you sure you want to cancel your ticket for {selectedTicket?.train} from {selectedTicket?.from} to {selectedTicket?.to} on {selectedTicket?.date}? 
+          <DialogContentText id="cancel-dialog-description">
+            Are you sure you want to cancel your ticket for {selectedTicket?.trainName} from {selectedTicket?.from} to {selectedTicket?.to} on {renderDate(selectedTicket?.date)}?
+            <br />
             This action cannot be undone.
           </DialogContentText>
+          {bookingLoading && <CircularProgress sx={{ display: 'block', margin: '10px auto' }} />}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCancelDialogOpen(false)}>No, Keep Ticket</Button>
-          <Button onClick={confirmCancelTicket} color="error" autoFocus>
+          <Button onClick={() => setCancelDialogOpen(false)} disabled={bookingLoading}>
+            No, Keep Ticket
+          </Button>
+          <Button onClick={confirmCancelTicket} color="error" autoFocus disabled={bookingLoading}>
             Yes, Cancel Ticket
           </Button>
         </DialogActions>
