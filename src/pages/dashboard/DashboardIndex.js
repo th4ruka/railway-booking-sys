@@ -77,12 +77,12 @@ export default function DashboardIndex() {
   };
 
   return (
-    <Box>
-      <Paper elevation={1} sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+    <React.Fragment>
+      <Paper elevation={1} sx={{ p: 2, mb: 3, borderRadius: 2 }}>
         <Typography variant="h4" gutterBottom>
           Welcome, {currentUser?.displayName || 'Passenger'}!
         </Typography>
-        <Typography variant="subtitle1">
+        <Typography variant="subtitle1" color="text.secondary">
           Today is {currentDate}
         </Typography>
       </Paper>
@@ -96,7 +96,7 @@ export default function DashboardIndex() {
           <Grid container spacing={2}>
             {quickAccess.map((action, index) => (
               <Grid item xs={6} sm={3} key={index}>
-                <Card sx={{ textAlign: 'center', cursor: 'pointer', transition: '0.3s', '&:hover': { transform: 'translateY(-5px)', boxShadow: 6 } }}>
+                <Card sx={{ textAlign: 'center', cursor: 'pointer', transition: '0.3s', '&:hover': { transform: 'translateY(-5px)', boxShadow: (theme) => theme.shadows[6] } }}>
                   <CardContent onClick={() => navigate(action.path)}>
                     <Box sx={{ mb: 2 }}>
                       {React.cloneElement(action.icon, { fontSize: 'large', color: 'primary' })}
@@ -131,7 +131,7 @@ export default function DashboardIndex() {
                             <Typography variant="h6">
                               {trip.train}
                             </Typography>
-                            <Typography variant="body2" color="textSecondary">
+                            <Typography variant="body2" color="text.secondary">
                               {trip.from} to {trip.to}
                             </Typography>
                           </Grid>
@@ -160,7 +160,7 @@ export default function DashboardIndex() {
               </Grid>
             ) : (
               <Box sx={{ py: 4, textAlign: 'center' }}>
-                <Typography variant="body1" color="textSecondary" paragraph>
+                <Typography variant="body1" color="text.secondary" paragraph>
                   You don't have any upcoming trips.
                 </Typography>
                 <Button 
@@ -182,10 +182,10 @@ export default function DashboardIndex() {
               Notifications
             </Typography>
             {notifications.length > 0 ? (
-              <List>
+              <List disablePadding>
                 {notifications.map((notification) => (
-                  <ListItem key={notification.id} sx={{ mb: 1, border: '1px solid #eee', borderRadius: 1 }}>
-                    <ListItemIcon>
+                  <ListItem key={notification.id} sx={{ mb: 1, border: (theme) => `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
+                    <ListItemIcon sx={{ minWidth: 40 }}>
                       {getNotificationIcon(notification.type)}
                     </ListItemIcon>
                     <ListItemText 
@@ -198,6 +198,7 @@ export default function DashboardIndex() {
                   <Button 
                     variant="text" 
                     fullWidth
+                    size="small"
                   >
                     View All Notifications
                   </Button>
@@ -205,7 +206,7 @@ export default function DashboardIndex() {
               </List>
             ) : (
               <Box sx={{ py: 4, textAlign: 'center' }}>
-                <Typography variant="body1" color="textSecondary">
+                <Typography variant="body1" color="text.secondary">
                   You don't have any notifications.
                 </Typography>
               </Box>
@@ -236,16 +237,16 @@ export default function DashboardIndex() {
                     <CardContent>
                       <Grid container alignItems="center" spacing={1}>
                         <Grid item>
-                          <Avatar sx={{ bgcolor: index === 1 ? 'success.main' : index === 2 ? 'warning.main' : 'error.main' }}>
-                            <Train />
+                          <Avatar sx={{ bgcolor: index === 1 ? 'success.light' : index === 2 ? 'warning.light' : 'error.light', color: index === 1 ? 'success.dark' : index === 2 ? 'warning.dark' : 'error.dark' }}>
+                            <Train fontSize="small"/>
                           </Avatar>
                         </Grid>
                         <Grid item xs>
-                          <Typography variant="subtitle1">
+                          <Typography variant="subtitle1" fontWeight="medium">
                             {index === 1 ? 'Udarata Manike' : index === 2 ? 'Ruhunu Kumari' : 'Yal Devi'}
                           </Typography>
-                          <Typography variant="body2" color="textSecondary">
-                            {index === 1 ? 'On time' : index === 2 ? 'Delayed by 10 minutes' : 'Delayed by 30 minutes'}
+                          <Typography variant="body2" color="text.secondary">
+                            {index === 1 ? 'On time' : index === 2 ? 'Delayed by 10 mins' : 'Delayed by 30 mins'}
                           </Typography>
                         </Grid>
                       </Grid>
@@ -265,6 +266,6 @@ export default function DashboardIndex() {
           </Paper>
         </Grid>
       </Grid>
-    </Box>
+    </React.Fragment>
   );
 } 

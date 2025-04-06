@@ -113,10 +113,15 @@ export default function DashboardLayout() {
   const location = useLocation();
   const { currentUser } = useAuth();
 
+  // Closed drawer width for sm screens and up
+  const closedDrawerWidth = `calc(${theme.spacing(8)} + 1px)`; // Based on closedMixin for sm+
+
   useEffect(() => {
     if (!isMobile && mobileOpen) {
       setMobileOpen(false);
     }
+    // Consider if you want the desktop drawer to auto-close on resize to mobile
+    // setOpen(!isMobile);
   }, [isMobile, mobileOpen]);
 
   const handleDrawerToggle = () => {
@@ -157,7 +162,7 @@ export default function DashboardLayout() {
     <>
       <DrawerHeader>
         <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1, pl: 1 }}>
-          <Typography variant="h6" noWrap component={Link} to="/dashboard" 
+          <Typography variant="h6" noWrap component={Link} to="/dashboard"
             sx={{ textDecoration: 'none', color: 'inherit' }}>
             RAIL-RUNNER
           </Typography>
@@ -170,12 +175,13 @@ export default function DashboardLayout() {
       <List>
         {menuItems.map((item) => {
           const isActive = location.pathname === item.path;
+          const relevantOpen = isMobile ? mobileOpen : open; // Determine which open state is relevant
           return (
             <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
               <ListItemButton
                 sx={{
                   minHeight: 48,
-                  justifyContent: open || mobileOpen ? 'initial' : 'center',
+                  justifyContent: relevantOpen ? 'initial' : 'center',
                   px: 2.5,
                 }}
                 onClick={() => {
@@ -189,17 +195,17 @@ export default function DashboardLayout() {
                 <ListItemIcon
                   sx={{
                     minWidth: 0,
-                    mr: open || mobileOpen ? 3 : 'auto',
+                    mr: relevantOpen ? 3 : 'auto',
                     justifyContent: 'center',
                     color: isActive ? 'primary.main' : 'inherit',
                   }}
                 >
                   {item.icon}
                 </ListItemIcon>
-                <ListItemText 
-                  primary={item.text} 
-                  sx={{ 
-                    opacity: open || mobileOpen ? 1 : 0,
+                <ListItemText
+                  primary={item.text}
+                  sx={{
+                    opacity: relevantOpen ? 1 : 0,
                     color: isActive ? 'primary.main' : 'inherit',
                     '& .MuiTypography-root': {
                       fontWeight: isActive ? 600 : 400
@@ -218,87 +224,93 @@ export default function DashboardLayout() {
     <Box sx={{ display: 'flex' }}>
       <CssBaseline />
 
+      {/* Fixed Toggle Button */}
       <Box
         sx={{
           position: 'fixed',
-          top: theme.spacing(1),
-          left: theme.spacing(2),
+          top: theme.spacing(1.5), // Slightly adjust position if needed
+          left: theme.spacing(1.5), // Slightly adjust position if needed
           zIndex: theme.zIndex.drawer + 2,
+          color: theme.palette.primary.contrastText, // Ensure visibility against AppBar
         }}
       >
         <IconButton
           color="inherit"
           aria-label="toggle drawer"
           onClick={handleDrawerToggle}
-          sx={{
-          }}
         >
           <MenuIcon />
         </IconButton>
       </Box>
 
+      {/* AppBar */}
       <AppBarStyled position="fixed" elevation={1} color="primary">
-        <Toolbar sx={{ pl: { xs: 8, sm: 9 } }}>
-          <Typography 
-            variant="h6" 
-            component="div" 
+        {/* Adjust left padding to account for fixed toggle button */}
+        <Toolbar sx={{ pl: { xs: 7, sm: 8 } }}> {/* Adjusted padding */}
+          <Typography
+            variant="h6"
+            component="div"
             sx={{ flexGrow: 1 }}
           >
             Passenger Dashboard
           </Typography>
+          {/* User Profile Section */}
           <div>
-            <IconButton
-              size="large"
-              aria-label="account of current user"
-              aria-controls="menu-appbar"
-              aria-haspopup="true"
-              onClick={handleMenu}
-              color="inherit"
-            >
-              <Avatar sx={{ bgcolor: 'secondary.main' }}>
-                {currentUser?.displayName ? currentUser.displayName.at(0)?.toUpperCase() : 'U'}
-              </Avatar>
-            </IconButton>
-            <Menu
-              id="menu-appbar"
-              anchorEl={anchorEl}
-              anchorOrigin={{
-                vertical: 'bottom',
-                horizontal: 'right',
-              }}
-              keepMounted
-              transformOrigin={{
-                vertical: 'top',
-                horizontal: 'right',
-              }}
-              open={Boolean(anchorEl)}
-              onClose={handleClose}
-            >
-              <MenuItem onClick={() => {
-                handleClose();
-                navigate('/dashboard/profile');
-              }}>
-                <ListItemIcon>
-                  <AccountCircle fontSize="small" />
-                </ListItemIcon>
-                Profile
-              </MenuItem>
-              <MenuItem onClick={handleLogout}>
-                <ListItemIcon>
-                  <Logout fontSize="small" />
-                </ListItemIcon>
-                Logout
-              </MenuItem>
-            </Menu>
-          </div>
+             <IconButton
+               size="large"
+               aria-label="account of current user"
+               aria-controls="menu-appbar"
+               aria-haspopup="true"
+               onClick={handleMenu}
+               color="inherit"
+             >
+               <Avatar sx={{ bgcolor: 'secondary.main' }}>
+                 {currentUser?.displayName ? currentUser.displayName.at(0)?.toUpperCase() : 'U'}
+               </Avatar>
+             </IconButton>
+             <Menu
+               id="menu-appbar"
+               anchorEl={anchorEl}
+               anchorOrigin={{
+                 vertical: 'bottom',
+                 horizontal: 'right',
+               }}
+               keepMounted
+               transformOrigin={{
+                 vertical: 'top',
+                 horizontal: 'right',
+               }}
+               open={Boolean(anchorEl)}
+               onClose={handleClose}
+             >
+               <MenuItem onClick={() => {
+                 handleClose();
+                 navigate('/dashboard/profile');
+               }}>
+                 <ListItemIcon>
+                   <AccountCircle fontSize="small" />
+                 </ListItemIcon>
+                 Profile
+               </MenuItem>
+               <MenuItem onClick={handleLogout}>
+                 <ListItemIcon>
+                   <Logout fontSize="small" />
+                 </ListItemIcon>
+                 Logout
+               </MenuItem>
+             </Menu>
+           </div>
         </Toolbar>
       </AppBarStyled>
 
+      {/* Drawer Navigation Area */}
       <Box
         component="nav"
-        sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
+        // Width is handled by Drawer/DrawerStyled internally based on 'open' state
+        sx={{ width: { sm: open ? drawerWidth : closedDrawerWidth }, flexShrink: { sm: 0 } }}
         aria-label="mailbox folders"
       >
+        {/* Mobile Drawer */}
         <Drawer
           container={null}
           variant="temporary"
@@ -318,9 +330,10 @@ export default function DashboardLayout() {
           {drawerContent}
         </Drawer>
 
+        {/* Desktop Drawer */}
         <DrawerStyled
           variant="permanent"
-          open={open}
+          open={open} // Controls the styled open/closed state
           sx={{
             display: { xs: 'none', sm: 'block' },
           }}
@@ -329,35 +342,35 @@ export default function DashboardLayout() {
         </DrawerStyled>
       </Box>
 
+      {/* Main Content Area */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
-          transition: theme.transitions.create('margin', {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.leavingScreen,
-          }),
-          marginLeft: {
-            xs: 0,
-            sm: open ? 0 : `-${drawerWidth}px`
+          // REMOVED p: 3 from here
+          // Width and margin adjusted based on drawer state for sm+
+          width: {
+            xs: '100%', // Full width on mobile
+            sm: `calc(100% - ${(open ? drawerWidth : closedDrawerWidth)})` // Dynamic width based on drawer state
           },
-          ...(!isMobile && {
-            transition: theme.transitions.create('margin', {
-              easing: open ? theme.transitions.easing.easeOut : theme.transitions.easing.sharp,
-              duration: open ? theme.transitions.duration.enteringScreen : theme.transitions.duration.leavingScreen,
-            }),
-            marginLeft: open ? 0 : `calc(${theme.spacing(7)} + 1px)`,
-            width: `calc(100% - ${open ? drawerWidth : `calc(${theme.spacing(7)} + 1px)`}px)`
-          })
+          marginLeft: {
+             xs: 0, // No margin shift on mobile
+             // No marginLeft needed here, width adjustment handles the space
+          },
+          transition: theme.transitions.create(['width', 'margin'], { // Transition both width and margin
+            easing: open ? theme.transitions.easing.easeOut : theme.transitions.easing.sharp,
+            duration: open ? theme.transitions.duration.enteringScreen : theme.transitions.duration.leavingScreen,
+          }),
         }}
       >
-        <Toolbar />
-        <Container 
-          maxWidth="lg" 
-          sx={{ 
-            mt: 2,
+        <Toolbar /> {/* AppBar Spacer */}
+        <Container
+          maxWidth="lg"
+          sx={{
+            // Apply desired padding directly to the container
+            py: 3, // Vertical padding
+            // Horizontal padding is handled by Container maxWidth="lg"
+             mt: 0, // Removed mt: 2, AppBar spacer handles top spacing now
           }}
         >
           <Outlet />
