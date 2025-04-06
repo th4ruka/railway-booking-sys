@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { GoogleMap, LoadScript, Marker } from "@react-google-maps/api";
-import io from "socket.io-client";
+// import io from "socket.io-client";
 
-const socket = io("http://localhost:5000"); // Connect to backend
+// const socket = io("http://localhost:5000"); // Connect to backend
 
 const mapContainerStyle = {
   width: "100%",
@@ -14,13 +14,13 @@ const center = { lat: 40.7128, lng: -74.0060 };
 const TrainTracker = () => {
   const [trainLocations, setTrainLocations] = useState([]);
 
-  useEffect(() => {
-    socket.on("trainUpdate", (data) => {
-      setTrainLocations(data);
-    });
+  // useEffect(() => {
+  //   socket.on("trainUpdate", (data) => {
+  //     setTrainLocations(data);
+  //   });
 
-    return () => socket.off("trainUpdate");
-  }, []);
+  //   return () => socket.off("trainUpdate");
+  // }, []);
 
   return (
     <LoadScript googleMapsApiKey="YOUR_GOOGLE_MAPS_API_KEY">
