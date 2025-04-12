@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -13,7 +13,9 @@ import {
   ListItemIcon,
   ListItemText,
   Avatar,
-  Chip
+  Chip,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
   Train,
@@ -29,10 +31,31 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { getUserTickets } from '../../firebase/ticketService';
+import { getUserComplaints } from '../../firebase/complaintService';
+import { getUserPasses } from '../../firebase/seasonPassService';
+import { format, addDays, isAfter, differenceInDays } from 'date-fns';
+import { db } from '../../firebase/config';
+import { collection, query, limit, getDocs, orderBy } from 'firebase/firestore';
 
 export default function DashboardIndex() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  
+  // States for upcoming trips
+  const [upcomingTrips, setUpcomingTrips] = useState([]);
+  const [loadingTrips, setLoadingTrips] = useState(false);
+  const [tripsError, setTripsError] = useState('');
+  
+  // States for notifications
+  const [notifications, setNotifications] = useState([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [notificationsError, setNotificationsError] = useState('');
+  
+  // States for train updates
+  const [trainUpdates, setTrainUpdates] = useState([]);
+  const [loadingTrainUpdates, setLoadingTrainUpdates] = useState(false);
+  const [trainUpdatesError, setTrainUpdatesError] = useState('');
   
   // Get current date in a readable format
   const currentDate = new Date().toLocaleDateString('en-US', { 
@@ -42,18 +65,6 @@ export default function DashboardIndex() {
     day: 'numeric' 
   });
   
-  // Mock upcoming trips data
-  const upcomingTrips = [
-    { id: 1, train: 'Udarata Manike', from: 'Colombo', to: 'Kandy', date: '2023-09-20', time: '08:00 AM' },
-  ];
-  
-  // Mock notifications
-  const notifications = [
-    { id: 1, type: 'info', message: 'Your season pass will expire in 10 days.', date: '2023-09-15' },
-    { id: 2, type: 'success', message: 'Your complaint has been resolved.', date: '2023-09-14' },
-    { id: 3, type: 'warning', message: 'Train #1082 will be delayed by 15 minutes tomorrow.', date: '2023-09-13' },
-  ];
-  
   // Quick access buttons
   const quickAccess = [
     { title: 'Book a Ticket', icon: <Train />, path: '/dashboard/tickets' },
@@ -61,6 +72,175 @@ export default function DashboardIndex() {
     { title: 'Apply for Pass', icon: <CardMembership />, path: '/dashboard/passes' },
     { title: 'Submit Complaint', icon: <Feedback />, path: '/dashboard/complaints' },
   ];
+
+  // Format Firestore timestamp
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    try {
+      return format(timestamp.toDate(), 'yyyy-MM-dd');
+    } catch (e) {
+      return 'Invalid Date';
+    }
+  };
+  
+  // Format time from Firestore timestamp
+  const formatTime = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    try {
+      return format(timestamp.toDate(), 'hh:mm a');
+    } catch (e) {
+      return 'Invalid Time';
+    }
+  };
+
+  // Fetch user's upcoming trips
+  const fetchUpcomingTrips = async () => {
+    if (!currentUser) return;
+    
+    setLoadingTrips(true);
+    setTripsError('');
+    
+    try {
+      // Get user tickets from ticketService
+      const tickets = await getUserTickets(currentUser.uid);
+      
+      // Filter for upcoming trips (booking date is in the future)
+      const now = new Date();
+      const upcoming = tickets
+        .filter(ticket => {
+          // First check if travelDate exists and is a valid Timestamp object
+          if (!ticket.travelDate || typeof ticket.travelDate.toDate !== 'function') {
+            return false; // Skip this ticket
+          }
+          const tripDate = ticket.travelDate.toDate();
+          return isAfter(tripDate, now);
+        })
+        .map(ticket => ({
+          id: ticket.id,
+          train: ticket.trainName,
+          from: ticket.from,
+          to: ticket.to,
+          date: formatDate(ticket.travelDate),
+          time: ticket.departureTime,
+          bookingRef: ticket.bookingRef
+        }))
+        .sort((a, b) => new Date(a.date) - new Date(b.date))
+        .slice(0, 3); // Limit to 3 upcoming trips
+      
+      setUpcomingTrips(upcoming);
+    } catch (error) {
+      console.error("Error fetching upcoming trips:", error);
+      setTripsError("Couldn't load your upcoming trips");
+    } finally {
+      setLoadingTrips(false);
+    }
+  };
+  
+  // Generate and fetch user notifications
+  const generateNotifications = async () => {
+    if (!currentUser) return;
+    
+    setLoadingNotifications(true);
+    setNotificationsError('');
+    
+    try {
+      const userNotifications = [];
+      const today = new Date();
+      
+      // Check season passes for expiring soon
+      const passes = await getUserPasses(currentUser.uid);
+      passes.forEach(pass => {
+        const expiryDate = pass.validTo.toDate();
+        const daysRemaining = differenceInDays(expiryDate, today);
+        
+        if (daysRemaining <= 14 && daysRemaining > 0) {
+          userNotifications.push({
+            id: `pass-${pass.id}`,
+            type: 'info',
+            message: `Your season pass will expire in ${daysRemaining} days.`,
+            date: format(today, 'yyyy-MM-dd'),
+            link: '/dashboard/passes'
+          });
+        }
+      });
+      
+      // Check complaints that were recently resolved
+      const complaints = await getUserComplaints(currentUser.uid);
+      complaints.forEach(complaint => {
+        if (complaint.status === 'Resolved' && complaint.resolvedAt) {
+          const resolvedDate = complaint.resolvedAt.toDate();
+          const daysSinceResolved = differenceInDays(today, resolvedDate);
+          
+          if (daysSinceResolved <= 7) {
+            userNotifications.push({
+              id: `complaint-${complaint.id}`,
+              type: 'success',
+              message: `Your complaint "${complaint.subject}" has been resolved.`,
+              date: formatDate(complaint.resolvedAt),
+              link: '/dashboard/complaints'
+            });
+          }
+        }
+      });
+      
+      // Sort notifications by date (newest first)
+      userNotifications.sort((a, b) => new Date(b.date) - new Date(a.date));
+      
+      setNotifications(userNotifications);
+    } catch (error) {
+      console.error("Error generating notifications:", error);
+      setNotificationsError("Couldn't load your notifications");
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+  
+  // Fetch latest train updates
+  const fetchTrainUpdates = async () => {
+    setLoadingTrainUpdates(true);
+    setTrainUpdatesError('');
+    
+    try {
+      // Query trains collection for the most recent/active trains
+      const trainsRef = collection(db, "trains");
+      const q = query(trainsRef, orderBy("departureTime", "desc"), limit(3));
+      const querySnapshot = await getDocs(q);
+      
+      const trains = [];
+      querySnapshot.forEach(doc => {
+        const train = doc.data();
+        
+        // Determine train status
+        let status = 'On time';
+        let statusColor = 'success';
+        
+        // If you have delay information in the train documents:
+        if (train.delay) {
+          if (train.delay <= 15) {
+            status = `Delayed by ${train.delay} mins`;
+            statusColor = 'warning';
+          } else {
+            status = `Delayed by ${train.delay} mins`;
+            statusColor = 'error';
+          }
+        }
+        
+        trains.push({
+          id: doc.id,
+          name: train.trainName,
+          status: status,
+          statusColor: statusColor
+        });
+      });
+      
+      setTrainUpdates(trains);
+    } catch (error) {
+      console.error("Error fetching train updates:", error);
+      setTrainUpdatesError("Couldn't load train updates");
+    } finally {
+      setLoadingTrainUpdates(false);
+    }
+  };
 
   // Helper function to render notification icon based on type
   const getNotificationIcon = (type) => {
@@ -75,6 +255,15 @@ export default function DashboardIndex() {
         return <Notifications color="action" />;
     }
   };
+  
+  // Load data when component mounts
+  useEffect(() => {
+    if (currentUser) {
+      fetchUpcomingTrips();
+      generateNotifications();
+      fetchTrainUpdates();
+    }
+  }, [currentUser]);
 
   return (
     <React.Fragment>
@@ -117,7 +306,18 @@ export default function DashboardIndex() {
             <Typography variant="h6" gutterBottom>
               Upcoming Trips
             </Typography>
-            {upcomingTrips.length > 0 ? (
+            
+            {loadingTrips && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>
+                <CircularProgress />
+              </Box>
+            )}
+            
+            {tripsError && !loadingTrips && (
+              <Alert severity="error" sx={{ my: 2 }}>{tripsError}</Alert>
+            )}
+            
+            {!loadingTrips && !tripsError && upcomingTrips.length > 0 ? (
               <Grid container spacing={2}>
                 {upcomingTrips.map((trip) => (
                   <Grid item xs={12} key={trip.id}>
@@ -159,18 +359,20 @@ export default function DashboardIndex() {
                 </Grid>
               </Grid>
             ) : (
-              <Box sx={{ py: 4, textAlign: 'center' }}>
-                <Typography variant="body1" color="text.secondary" paragraph>
-                  You don't have any upcoming trips.
-                </Typography>
-                <Button 
-                  variant="contained" 
-                  startIcon={<Train />}
-                  onClick={() => navigate('/dashboard/tickets')}
-                >
-                  Book a Trip
-                </Button>
-              </Box>
+              !loadingTrips && !tripsError && (
+                <Box sx={{ py: 4, textAlign: 'center' }}>
+                  <Typography variant="body1" color="text.secondary" paragraph>
+                    You don't have any upcoming trips.
+                  </Typography>
+                  <Button 
+                    variant="contained" 
+                    startIcon={<Train />}
+                    onClick={() => navigate('/dashboard/tickets')}
+                  >
+                    Book a Trip
+                  </Button>
+                </Box>
+              )
             )}
           </Paper>
         </Grid>
@@ -181,10 +383,26 @@ export default function DashboardIndex() {
             <Typography variant="h6" gutterBottom>
               Notifications
             </Typography>
-            {notifications.length > 0 ? (
+            
+            {loadingNotifications && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>
+                <CircularProgress />
+              </Box>
+            )}
+            
+            {notificationsError && !loadingNotifications && (
+              <Alert severity="error" sx={{ my: 2 }}>{notificationsError}</Alert>
+            )}
+            
+            {!loadingNotifications && !notificationsError && notifications.length > 0 ? (
               <List disablePadding>
                 {notifications.map((notification) => (
-                  <ListItem key={notification.id} sx={{ mb: 1, border: (theme) => `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
+                  <ListItem 
+                    key={notification.id} 
+                    sx={{ mb: 1, border: (theme) => `1px solid ${theme.palette.divider}`, borderRadius: 1 }}
+                    button={!!notification.link}
+                    onClick={() => notification.link && navigate(notification.link)}
+                  >
                     <ListItemIcon sx={{ minWidth: 40 }}>
                       {getNotificationIcon(notification.type)}
                     </ListItemIcon>
@@ -194,22 +412,15 @@ export default function DashboardIndex() {
                     />
                   </ListItem>
                 ))}
-                <ListItem>
-                  <Button 
-                    variant="text" 
-                    fullWidth
-                    size="small"
-                  >
-                    View All Notifications
-                  </Button>
-                </ListItem>
               </List>
             ) : (
-              <Box sx={{ py: 4, textAlign: 'center' }}>
-                <Typography variant="body1" color="text.secondary">
-                  You don't have any notifications.
-                </Typography>
-              </Box>
+              !loadingNotifications && !notificationsError && (
+                <Box sx={{ py: 4, textAlign: 'center' }}>
+                  <Typography variant="body1" color="text.secondary">
+                    You don't have any notifications.
+                  </Typography>
+                </Box>
+              )
             )}
           </Paper>
         </Grid>
@@ -230,31 +441,56 @@ export default function DashboardIndex() {
               />
             </Box>
             <Divider sx={{ mb: 2 }} />
-            <Grid container spacing={2}>
-              {[1, 2, 3].map((index) => (
-                <Grid item xs={12} md={4} key={index}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Grid container alignItems="center" spacing={1}>
-                        <Grid item>
-                          <Avatar sx={{ bgcolor: index === 1 ? 'success.light' : index === 2 ? 'warning.light' : 'error.light', color: index === 1 ? 'success.dark' : index === 2 ? 'warning.dark' : 'error.dark' }}>
-                            <Train fontSize="small"/>
-                          </Avatar>
+            
+            {loadingTrainUpdates && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>
+                <CircularProgress />
+              </Box>
+            )}
+            
+            {trainUpdatesError && !loadingTrainUpdates && (
+              <Alert severity="error" sx={{ my: 2 }}>{trainUpdatesError}</Alert>
+            )}
+            
+            {!loadingTrainUpdates && !trainUpdatesError && trainUpdates.length > 0 ? (
+              <Grid container spacing={2}>
+                {trainUpdates.map((train) => (
+                  <Grid item xs={12} md={4} key={train.id}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Grid container alignItems="center" spacing={1}>
+                          <Grid item>
+                            <Avatar 
+                              sx={{ 
+                                bgcolor: `${train.statusColor}.light`, 
+                                color: `${train.statusColor}.dark` 
+                              }}
+                            >
+                              <Train fontSize="small"/>
+                            </Avatar>
+                          </Grid>
+                          <Grid item xs>
+                            <Typography variant="subtitle1" fontWeight="medium">
+                              {train.name}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              {train.status}
+                            </Typography>
+                          </Grid>
                         </Grid>
-                        <Grid item xs>
-                          <Typography variant="subtitle1" fontWeight="medium">
-                            {index === 1 ? 'Udarata Manike' : index === 2 ? 'Ruhunu Kumari' : 'Yal Devi'}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {index === 1 ? 'On time' : index === 2 ? 'Delayed by 10 mins' : 'Delayed by 30 mins'}
-                          </Typography>
-                        </Grid>
-                      </Grid>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            ) : (
+              !loadingTrainUpdates && !trainUpdatesError && (
+                <Typography variant="body1" color="text.secondary" align="center" sx={{ py: 3 }}>
+                  No train updates available.
+                </Typography>
+              )
+            )}
+            
             <Box sx={{ mt: 2, textAlign: 'right' }}>
               <Button 
                 variant="text" 

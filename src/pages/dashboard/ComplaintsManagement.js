@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -20,66 +20,184 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
-  Stepper,
-  Step,
-  StepLabel,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import { 
   Feedback, 
   Send, 
   AccessTime,
   CheckCircle,
-  Error
+  Error,
+  Reply
 } from '@mui/icons-material';
+import { format } from 'date-fns';
+import { auth } from '../../firebase/config';
+import { 
+  submitComplaint, 
+  getUserComplaints, 
+  addComplaintFollowUp 
+} from '../../firebase/complaintService';
 
 export default function ComplaintsManagement() {
-  const [complaintType, setComplaintType] = useState('');
-  const [complaint, setComplaint] = useState('');
+  const currentUser = auth.currentUser;
+  
+  // Form state
+  const [complaintForm, setComplaintForm] = useState({
+    type: '',
+    subject: '',
+    description: '',
+    contactInfo: ''
+  });
+  
+  // Complaints list state
+  const [myComplaints, setMyComplaints] = useState([]);
+  const [loadingComplaints, setLoadingComplaints] = useState(false);
+  const [complaintsError, setComplaintsError] = useState('');
+  
+  // Form submission state
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   
-  // Mock data for demonstration
-  const myComplaints = [
-    { 
-      id: 1, 
-      type: 'Service Issue', 
-      subject: 'Delayed Train on September 10th',
-      date: '2023-09-12',
-      status: 'In Progress',
-      response: 'We are looking into this issue and will get back to you shortly.',
-      description: 'The train from Colombo to Kandy was delayed by more than 2 hours without any announcement.'
-    },
-    { 
-      id: 2, 
-      type: 'Facility Concern', 
-      subject: 'Poor Condition of Restrooms',
-      date: '2023-09-05',
-      status: 'Resolved',
-      response: 'Thank you for bringing this to our attention. We have addressed this issue and improved the cleanliness protocols.',
-      description: 'The restrooms at Colombo Fort Station were not clean and lacked basic supplies.'
-    },
-  ];
-
-  const handleComplaintTypeChange = (event) => {
-    setComplaintType(event.target.value);
+  // Follow-up dialog state
+  const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+  const [selectedComplaint, setSelectedComplaint] = useState(null);
+  const [followUpMessage, setFollowUpMessage] = useState('');
+  const [followingUp, setFollowingUp] = useState(false);
+  const [followUpError, setFollowUpError] = useState('');
+  
+  // Handle form input changes
+  const handleFormChange = (e) => {
+    const { name, value } = e.target;
+    setComplaintForm(prev => ({
+      ...prev,
+      [name]: value
+    }));
   };
-
-  const handleComplaintChange = (event) => {
-    setComplaint(event.target.value);
+  
+  // Fetch user complaints
+  const fetchMyComplaints = async () => {
+    if (!currentUser) {
+      setComplaintsError('Please log in to view your complaints.');
+      return;
+    }
+    
+    setLoadingComplaints(true);
+    setComplaintsError('');
+    
+    try {
+      const complaints = await getUserComplaints(currentUser.uid);
+      setMyComplaints(complaints);
+      
+      if (complaints.length === 0) {
+        setComplaintsError('You haven\'t submitted any complaints yet.');
+      }
+    } catch (error) {
+      console.error("Error fetching complaints:", error);
+      setComplaintsError(error.message || 'Failed to load your complaints.');
+    } finally {
+      setLoadingComplaints(false);
+    }
   };
-
-  const handleSubmit = (event) => {
+  
+  // Submit complaint
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    // In a real app, you would send complaint data to the backend
-    console.log("Complaint submitted:", { type: complaintType, complaint });
-    setSuccessDialogOpen(true);
+    
+    if (!currentUser) {
+      setSubmitError('You must be logged in to submit a complaint.');
+      return;
+    }
+    
+    // Validate required fields
+    if (!complaintForm.type || !complaintForm.subject || !complaintForm.description) {
+      setSubmitError('Please fill in all required fields.');
+      return;
+    }
+    
+    setSubmitting(true);
+    setSubmitError('');
+    
+    try {
+      await submitComplaint(complaintForm, currentUser);
+      setSuccessDialogOpen(true);
+      
+      // Refresh the complaints list
+      fetchMyComplaints();
+      
+    } catch (error) {
+      console.error("Error submitting complaint:", error);
+      setSubmitError(error.message || 'Failed to submit complaint. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
-
+  
+  // Handle dialog close
   const handleCloseDialog = () => {
     setSuccessDialogOpen(false);
-    // Reset form after submission
-    setComplaintType('');
-    setComplaint('');
+    // Reset form after successful submission
+    setComplaintForm({
+      type: '',
+      subject: '',
+      description: '',
+      contactInfo: ''
+    });
   };
+  
+  // Handle follow-up
+  const handleOpenFollowUp = (complaint) => {
+    setSelectedComplaint(complaint);
+    setFollowUpMessage('');
+    setFollowUpError('');
+    setFollowUpDialogOpen(true);
+  };
+  
+  const handleCloseFollowUp = () => {
+    setFollowUpDialogOpen(false);
+  };
+  
+  const handleFollowUpSubmit = async () => {
+    if (!followUpMessage.trim()) {
+      setFollowUpError('Please enter a message.');
+      return;
+    }
+    
+    setFollowingUp(true);
+    setFollowUpError('');
+    
+    try {
+      await addComplaintFollowUp(selectedComplaint.id, followUpMessage, currentUser.uid);
+      
+      // Close dialog and refresh complaints
+      setFollowUpDialogOpen(false);
+      fetchMyComplaints();
+      
+    } catch (error) {
+      console.error("Error submitting follow-up:", error);
+      setFollowUpError(error.message || 'Failed to submit follow-up. Please try again.');
+    } finally {
+      setFollowingUp(false);
+    }
+  };
+  
+  // Format date from Firestore
+  const renderDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    try {
+      return format(timestamp.toDate(), 'yyyy-MM-dd');
+    } catch (e) {
+      return 'Invalid Date';
+    }
+  };
+  
+  // Load complaints when component mounts
+  useEffect(() => {
+    if (currentUser) {
+      fetchMyComplaints();
+    }
+  }, [currentUser]);
 
   return (
     <Box sx={{ width: '100%' }}>
@@ -93,15 +211,19 @@ export default function ComplaintsManagement() {
             <Typography variant="h6" gutterBottom>
               Submit a Complaint
             </Typography>
+            
+            {submitError && <Alert severity="error" sx={{ mb: 2 }}>{submitError}</Alert>}
+            
             <Box component="form" onSubmit={handleSubmit}>
               <Grid container spacing={2}>
                 <Grid item xs={12}>
                   <FormControl fullWidth required>
                     <InputLabel>Complaint Type</InputLabel>
                     <Select
-                      value={complaintType}
+                      name="type"
+                      value={complaintForm.type}
                       label="Complaint Type"
-                      onChange={handleComplaintTypeChange}
+                      onChange={handleFormChange}
                     >
                       <MenuItem value="schedule">Schedule Issue</MenuItem>
                       <MenuItem value="service">Service Issue</MenuItem>
@@ -113,43 +235,50 @@ export default function ComplaintsManagement() {
                 </Grid>
                 <Grid item xs={12}>
                   <TextField
+                    name="subject"
                     fullWidth
                     label="Subject"
                     variant="outlined"
                     required
+                    value={complaintForm.subject}
+                    onChange={handleFormChange}
                   />
                 </Grid>
                 <Grid item xs={12}>
                   <TextField
+                    name="description"
                     fullWidth
                     label="Complaint Details"
                     multiline
                     rows={6}
                     variant="outlined"
-                    value={complaint}
-                    onChange={handleComplaintChange}
+                    value={complaintForm.description}
+                    onChange={handleFormChange}
                     required
                     placeholder="Please provide detailed information about your complaint..."
                   />
                 </Grid>
                 <Grid item xs={12}>
                   <TextField
+                    name="contactInfo"
                     fullWidth
                     label="Contact Information (optional)"
                     variant="outlined"
+                    value={complaintForm.contactInfo}
+                    onChange={handleFormChange}
                     placeholder="Additional contact information if different from your account"
                   />
                 </Grid>
                 <Grid item xs={12}>
                   <Button 
                     variant="contained" 
-                    startIcon={<Send />}
+                    startIcon={submitting ? <CircularProgress size={20} color="inherit" /> : <Send />}
                     size="large"
                     type="submit"
                     fullWidth
-                    disabled={!complaintType || !complaint}
+                    disabled={submitting || !complaintForm.type || !complaintForm.subject || !complaintForm.description}
                   >
-                    Submit Complaint
+                    {submitting ? 'Submitting...' : 'Submit Complaint'}
                   </Button>
                 </Grid>
               </Grid>
@@ -163,52 +292,105 @@ export default function ComplaintsManagement() {
               Your Previous Complaints
             </Typography>
             
-            {myComplaints.map((complaint) => (
-              <Card key={complaint.id} sx={{ mb: 2 }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="h6">
-                      {complaint.subject}
-                    </Typography>
-                    <Chip 
-                      label={complaint.status} 
-                      color={complaint.status === 'Resolved' ? 'success' : 'primary'} 
-                      size="small" 
-                      icon={complaint.status === 'Resolved' ? <CheckCircle /> : <AccessTime />}
-                    />
-                  </Box>
-                  <Typography variant="body2" color="textSecondary" gutterBottom>
-                    {complaint.type} • Submitted on {complaint.date}
-                  </Typography>
-                  <Divider sx={{ my: 1 }} />
-                  <Typography variant="body2" paragraph>
-                    {complaint.description}
-                  </Typography>
-                  
-                  {complaint.response && (
-                    <Box sx={{ mt: 2, p: 1, bgcolor: 'background.default', borderRadius: 1 }}>
-                      <Typography variant="subtitle2" gutterBottom>
-                        Response from Customer Service:
-                      </Typography>
-                      <Typography variant="body2">
-                        {complaint.response}
-                      </Typography>
-                    </Box>
-                  )}
-                </CardContent>
-                <CardActions>
-                  <Button size="small">View Details</Button>
-                  {complaint.status !== 'Resolved' && (
-                    <Button size="small" color="secondary">Follow Up</Button>
-                  )}
-                </CardActions>
-              </Card>
-            ))}
+            {loadingComplaints && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>
+                <CircularProgress />
+              </Box>
+            )}
             
-            {myComplaints.length === 0 && (
-              <Typography variant="body1" color="textSecondary" align="center" sx={{ py: 4 }}>
-                You haven't submitted any complaints yet.
-              </Typography>
+            {complaintsError && !loadingComplaints && myComplaints.length === 0 && (
+              <Alert severity="info" sx={{ mt: 2 }}>{complaintsError}</Alert>
+            )}
+            
+            {!loadingComplaints && myComplaints.length > 0 && (
+              <>
+                {myComplaints.map((complaint) => (
+                  <Card key={complaint.id} sx={{ mb: 2 }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="h6">
+                          {complaint.subject}
+                        </Typography>
+                        <Chip 
+                          label={complaint.status} 
+                          color={
+                            complaint.status === 'Resolved' ? 'success' : 
+                            complaint.status === 'Rejected' ? 'error' :
+                            complaint.status === 'In Progress' ? 'info' : 'default'
+                          } 
+                          size="small" 
+                          icon={
+                            complaint.status === 'Resolved' ? <CheckCircle /> : 
+                            complaint.status === 'Rejected' ? <Error /> :
+                            <AccessTime />
+                          }
+                        />
+                      </Box>
+                      <Typography variant="body2" color="textSecondary" gutterBottom>
+                        {complaint.type} • Submitted on {renderDate(complaint.createdAt)}
+                      </Typography>
+                      <Divider sx={{ my: 1 }} />
+                      <Typography variant="body2" paragraph>
+                        {complaint.description}
+                      </Typography>
+                      
+                      {complaint.response && (
+                        <Box sx={{ mt: 2, p: 1, bgcolor: 'background.default', borderRadius: 1 }}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Response from Customer Service:
+                          </Typography>
+                          <Typography variant="body2">
+                            {complaint.response}
+                          </Typography>
+                          {complaint.updatedAt && (
+                            <Typography variant="caption" color="textSecondary">
+                              {renderDate(complaint.updatedAt)}
+                            </Typography>
+                          )}
+                        </Box>
+                      )}
+                      
+                      {/* Conversation/follow-ups if they exist */}
+                      {complaint.conversation && complaint.conversation.length > 0 && (
+                        <Box sx={{ mt: 2 }}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Follow-up Messages:
+                          </Typography>
+                          {complaint.conversation.map((message, index) => (
+                            <Box 
+                              key={index} 
+                              sx={{ 
+                                p: 1, 
+                                my: 1, 
+                                bgcolor: message.sender === 'user' ? 'primary.light' : 'background.default',
+                                borderRadius: 1,
+                                color: message.sender === 'user' ? 'primary.contrastText' : 'text.primary'
+                              }}
+                            >
+                              <Typography variant="body2">{message.message}</Typography>
+                              <Typography variant="caption" sx={{ display: 'block', textAlign: 'right' }}>
+                                {message.sender === 'user' ? 'You' : 'Customer Service'} • {renderDate(message.timestamp)}
+                              </Typography>
+                            </Box>
+                          ))}
+                        </Box>
+                      )}
+                    </CardContent>
+                    <CardActions>
+                      {complaint.status !== 'Resolved' && complaint.status !== 'Rejected' && (
+                        <Button 
+                          size="small" 
+                          color="primary" 
+                          startIcon={<Reply />}
+                          onClick={() => handleOpenFollowUp(complaint)}
+                        >
+                          Follow Up
+                        </Button>
+                      )}
+                    </CardActions>
+                  </Card>
+                ))}
+              </>
             )}
           </Paper>
         </Grid>
@@ -229,6 +411,43 @@ export default function ComplaintsManagement() {
         <DialogActions>
           <Button onClick={handleCloseDialog} color="primary" autoFocus>
             OK
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Follow Up Dialog */}
+      <Dialog
+        open={followUpDialogOpen}
+        onClose={handleCloseFollowUp}
+      >
+        <DialogTitle>{"Add Follow-up to Complaint"}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Add additional information or follow up on complaint: <strong>{selectedComplaint?.subject}</strong>
+          </DialogContentText>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Follow-up Message"
+            fullWidth
+            multiline
+            rows={4}
+            value={followUpMessage}
+            onChange={(e) => setFollowUpMessage(e.target.value)}
+          />
+          {followUpError && <Alert severity="error" sx={{ mt: 2 }}>{followUpError}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseFollowUp} disabled={followingUp}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleFollowUpSubmit} 
+            color="primary" 
+            disabled={followingUp || !followUpMessage.trim()}
+            startIcon={followingUp ? <CircularProgress size={20} /> : null}
+          >
+            {followingUp ? 'Sending...' : 'Send Follow-up'}
           </Button>
         </DialogActions>
       </Dialog>
