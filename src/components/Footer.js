@@ -61,6 +61,9 @@ const Footer = () => {
               <MuiLink component={Link} to="/register" color="text.secondary" sx={{ textDecoration: 'none', '&:hover': { color: 'primary.main' } }}>
                 Register
               </MuiLink>
+              <MuiLink component={Link} to="/admin/login" color="text.secondary" sx={{ textDecoration: 'none', '&:hover': { color: 'primary.main' } }}>
+                Admin Portal
+              </MuiLink>
             </Stack>
           </Grid>
 
